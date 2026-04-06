@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper Anonymizer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── FOLDER MODAL ───────────────────────────── -->
+<div id="folderModal" class="modal-overlay">
+    <div class="modal">
+        <h2>⬡ Configure Folders</h2>
+        <div class="field">
+            <label>Input Folder</label>
+            <input type="text" id="inputFolderInput" placeholder="e.g. D:\Research\Input" />
+        </div>
+        <div class="field">
+            <label>Output Folder</label>
+            <input type="text" id="outputFolderInput" placeholder="e.g. D:\Research\Output" />
+        </div>
+        <button id="setFoldersBtn" class="btn-primary">Load Files →</button>
+        <div id="modalError" class="error-msg"></div>
+    </div>
+</div>
+
+<!-- ── MAIN GRID ───────────────────────────────── -->
+<div class="container">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-logo">⬡ Anonymizer</span>
+            <button class="icon-btn" id="configBtn" title="Change folders">⚙</button>
+        </div>
+
+        <div class="folder-info">
+            <div class="folder-path">
+                <span class="folder-icon">📂</span>
+                <span class="folder-text" id="inputFolderDisplay">—</span>
+            </div>
+            <div class="folder-path">
+                <span class="folder-icon">📤</span>
+                <span class="folder-text" id="outputFolderDisplay">—</span>
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-label">Input Files</div>
+            <ul id="inputFiles" class="file-list"></ul>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-label">Output Files</div>
+            <ul id="outputFiles" class="file-list output-list"></ul>
+        </div>
+    </aside>
+
+    <!-- TOPBAR -->
+    <header class="topbar">
+        <button class="nav-btn" onclick="prevFile()" id="prevBtn" disabled>← Prev</button>
+        <span id="title" class="file-title">Select a file</span>
+        <button class="nav-btn" onclick="nextFile()" id="nextBtn" disabled>Next →</button>
+    </header>
+
+    <!-- PDF VIEWER -->
+    <div id="viewerContainer">
+        <div id="placeholder">
+            <div class="placeholder-icon">📄</div>
+            Select a file from the sidebar
+        </div>
+        <!-- canvas + textLayer are positioned relative to viewerContainer -->
+        <div id="canvasWrapper" style="position:relative; display:inline-block;">
+            <canvas id="pdfCanvas" class="hidden"></canvas>
+            <div id="textLayer"></div>
+        </div>
+    </div>
+
+    <!-- PAGE CONTROLS -->
+    <div class="page-controls" id="pageControls">
+        <button class="page-btn" onclick="prevPage()">‹</button>
+        <span id="pageInfo">Page 1 / 1</span>
+        <button class="page-btn" onclick="nextPage()">›</button>
+    </div>
+
+    <!-- ACTION PANEL -->
+    <aside class="action-panel">
+        <div class="panel-heading">Selections</div>
+
+        <div class="selection-summary">
+            <span class="selection-count" id="selectionCount">0</span>
+            <span class="selection-label">regions</span>
+        </div>
+
+        <div class="pending-list" id="pendingList"></div>
+
+        <div class="action-buttons">
+            <button class="btn-remove" id="removeBtn" onclick="applyRemove()" disabled>
+                <span class="btn-icon">✂</span>
+                REMOVE
+            </button>
+            <button class="btn-undo" id="undoBtn" onclick="undoRedaction()" disabled>
+                <span class="btn-icon">↺</span>
+                UNDO
+            </button>
+        </div>
+
+        <button class="btn-save" id="saveBtn" onclick="savePdf()" disabled>
+            <span class="btn-icon">💾</span>
+            SAVE FILE
+        </button>
+
+        <button class="btn-clear" onclick="clearSelections()">Clear Pending</button>
+
+        <div id="statusMsg" class="status-msg"></div>
+
+        <div class="hint">Drag to select.<br>Click Remove to preview.<br>Save to finalize.</div>
+    </aside>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
