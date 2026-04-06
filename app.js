@@ -14,6 +14,7 @@ let totalPages      = 1;
 let pageRotations   = [];   // rotation per page from backend (0/90/180/270)
 let currentFilename = null;
 let selections        = [];   // { page, bbox, label }
+let ackFilename = null;
 let appliedRedactions = [];   // NEW: Items that are visually "removed" but not saved
 
 // Drag state
@@ -75,6 +76,25 @@ document.getElementById("setFoldersBtn").addEventListener("click", async () => {
 
 configBtn.addEventListener("click", () => folderModal.classList.remove("hidden"));
 
+document.getElementById('ackFileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    setStatus("Uploading Ack...", "working");
+    try {
+        const res = await fetch(`${API}/upload-ack`, { method: "POST", body: formData });
+        const data = await res.json();
+        ackFilename = data.filename;
+        document.getElementById('ackFileName').textContent = file.name;
+        setStatus("Acknowledgement file ready", "success");
+    } catch (err) {
+        setStatus("Upload failed", "error");
+    }
+});
+
 // ─── FILE LISTING ────────────────────────────────────────────────────────────
 async function loadFiles() {
     try {
@@ -90,23 +110,27 @@ async function loadFiles() {
 }
 
 function renderSidebar() {
+    // 1. INPUT FILES LIST
     const ul = document.getElementById("inputFiles");
     ul.innerHTML = "";
     files.forEach((f, i) => {
         const li = document.createElement("li");
         li.title = f;
         li.textContent = f.split("/").pop();
-        if (i === currentIndex) li.classList.add("active");
-        li.onclick = () => loadFile(i);
+        if (i === currentIndex) li.classList.add("active"); // Restored the active highlight
+        li.onclick = () => loadFile(i); // FIXED: Use standard loadFile for inputs
         ul.appendChild(li);
     });
 
+    // 2. OUTPUT FILES LIST
     const ul2 = document.getElementById("outputFiles");
     ul2.innerHTML = "";
     outputFiles.forEach(f => {
         const li = document.createElement("li");
         li.title = f;
         li.textContent = f.split("/").pop();
+        li.style.cursor = "pointer"; // Keep the clickable styling
+        li.onclick = () => loadOutputFile(f.split("/").pop()); // Use loadOutputFile for outputs
         ul2.appendChild(li);
     });
 
@@ -121,6 +145,7 @@ async function loadFile(index) {
     currentFilename = files[index];
 
     titleEl.textContent = currentFilename.split("/").pop();
+    canvas.style.pointerEvents = "auto";
     clearSelections();
     setStatus("Loading…", "working");
     renderSidebar();
@@ -136,6 +161,24 @@ async function loadFile(index) {
         setStatus("", "");
     } catch (e) {
         setStatus("Load failed: " + e.message, "error");
+    }
+}
+
+async function loadOutputFile(filename) {
+    titleEl.textContent = "[PREVIEW] " + filename;
+    clearSelections();
+    setStatus("Loading output preview…", "working");
+
+    // Disable making new selections visually
+    canvas.style.pointerEvents = "none";
+
+    try {
+        await openPdf(`${API}/serve-pdf/output/${encodeURIComponent(filename)}`);
+        setStatus("Viewing saved file.", "success");
+        currentFilename = null; // Prevent accidental overwriting
+        updateSelectionUI(); // Ensure save buttons are disabled
+    } catch (e) {
+        setStatus("Preview failed: " + e.message, "error");
     }
 }
 
@@ -301,10 +344,22 @@ function removeSelection(i) {
 }
 
 function updateSelectionUI() {
-    selectionCount.textContent = selections.length + appliedRedactions.length;
-    removeBtn.disabled         = selections.length === 0;
-    undoBtn.disabled           = appliedRedactions.length === 0;
-    saveBtn.disabled           = appliedRedactions.length === 0;
+    const pendingCount = selections.length;
+    const appliedCount = appliedRedactions.length;
+
+    selectionCount.textContent = pendingCount + appliedCount;
+
+    const applyBtn = document.getElementById("applyBtn");
+    const undoBtn = document.getElementById("undoBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const saveMergeBtn = document.getElementById("saveMergeBtn");
+    const removeBtn = document.getElementById("removeBtn");
+
+    if(applyBtn) applyBtn.disabled = pendingCount === 0;
+    if(undoBtn) undoBtn.disabled = appliedCount === 0;
+    if(saveBtn) saveBtn.disabled = appliedCount === 0;
+    if(saveMergeBtn) saveMergeBtn.disabled = appliedCount === 0;
+    if(removeBtn) removeBtn.disabled = pendingCount === 0;
 
     pendingList.innerHTML = "";
 
@@ -315,6 +370,7 @@ function updateSelectionUI() {
 
         const isApplied = i < appliedRedactions.length;
         div.style.opacity = isApplied ? "0.6" : "1";
+        if (isApplied) div.style.borderLeft = "3px solid #16a05a"; // Green indicator
         div.textContent = (isApplied ? "✓ " : "") + sel.label;
 
         // Only allow individual deletion for pending items
@@ -374,7 +430,11 @@ function redrawSelections() {
 viewerContainer.addEventListener("scroll", redrawSelections);
 window.addEventListener("resize", () => { if (currentPdfDoc) renderPage(currentPage); });
 document.addEventListener("keydown", e => {
-    if (e.key === "Enter") {const applyBtn = document.getElementById("applyBtn"); if (applyBtn && !applyBtn.disabled) applyRedactions();}});
+    if (e.key === "Enter") {
+        const applyBtn = document.getElementById("applyBtn");
+        if (applyBtn && !applyBtn.disabled) applyRemove();
+    }
+});
 
 // ─── NAVIGATION ──────────────────────────────────────────────────────────────
 function prevFile() { if (currentIndex > 0) loadFile(currentIndex - 1); }
@@ -392,6 +452,7 @@ function applyRemove() {
     redrawSelections();
 }
 
+
 // 2. Undo the last previewed removal
 function undoRedaction() {
     if (appliedRedactions.length === 0) return;
@@ -400,12 +461,22 @@ function undoRedaction() {
     redrawSelections();
 }
 
-// 3. Send all confirmed removals to the backend
-async function savePdf() {
+
+async function saveDocument(withMerge = false) {
     if (!currentFilename || appliedRedactions.length === 0) return;
 
-    setStatus("Saving File…", "working");
-    saveBtn.disabled = true;
+    // Check if they want to merge but haven't uploaded a file
+    if (withMerge && !ackFilename) {
+        setStatus("Please upload an Acknowledgement file first!", "error");
+        return;
+    }
+
+    setStatus(withMerge ? "Merging & Saving…" : "Saving to folder…", "working");
+
+    const saveBtn = document.getElementById("saveBtn");
+    const saveMergeBtn = document.getElementById("saveMergeBtn");
+    if(saveBtn) saveBtn.disabled = true;
+    if(saveMergeBtn) saveMergeBtn.disabled = true;
 
     try {
         const res = await fetch(`${API}/remove`, {
@@ -413,7 +484,9 @@ async function savePdf() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 filename:   currentFilename,
+                // Pass the appliedRedactions to the backend instead of 'selections'
                 selections: appliedRedactions.map(s => ({ page: s.page, bbox: s.bbox })),
+                ack_filename: withMerge ? ackFilename : null
             }),
         });
 
@@ -425,9 +498,10 @@ async function savePdf() {
         const data = await res.json();
         setStatus(`✓ Saved: ${data.output}`, "success");
 
-        // Load the finalized PDF
-        await openPdf(`${API}${data.pdf_url}`);
+        // Load the freshly anonymized PDF from the backend safely
+        await loadOutputFile(data.output);
 
+        // Clear state
         appliedRedactions = [];
         clearSelections();
         await refreshOutputFiles();
@@ -438,6 +512,7 @@ async function savePdf() {
     }
 }
 
+
 async function refreshOutputFiles() {
     try {
         const res  = await fetch(`${API}/files`);
@@ -447,9 +522,10 @@ async function refreshOutputFiles() {
         ul.innerHTML = "";
         outputFiles.forEach((f, i) => {
             const li = document.createElement("li");
-            li.title     = f;
+            li.title = f;
             li.textContent = f.split("/").pop();
-            if (i === outputFiles.length - 1) li.classList.add("new-file");
+            li.style.cursor = "pointer"; // Make it look clickable
+            li.onclick = () => loadOutputFile(f.split("/").pop()); // Load it when clicked
             ul.appendChild(li);
         });
     } catch { /* ignore */ }

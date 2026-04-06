@@ -95,6 +95,13 @@
 
         <div class="pending-list" id="pendingList"></div>
 
+        <div style="border-top: 1px solid var(--border); padding-top: 14px; margin-top: auto;">
+            <div class="panel-heading" style="margin-bottom: 8px;">Prepended Document</div>
+            <input type="file" id="ackFileInput" accept=".pdf" style="display:none;">
+            <button class="btn-clear" onclick="document.getElementById('ackFileInput').click()" style="padding: 10px;">📄 Upload Acknowledgement</button>
+            <div id="ackFileName" class="hint" style="margin-top: 6px; font-size: 9px; text-align: left;">No file uploaded</div>
+        </div>
+
         <div class="action-buttons">
             <button class="btn-remove" id="removeBtn" onclick="applyRemove()" disabled>
                 <span class="btn-icon">✂</span>
@@ -106,10 +113,18 @@
             </button>
         </div>
 
-        <button class="btn-save" id="saveBtn" onclick="savePdf()" disabled>
-            <span class="btn-icon">💾</span>
-            SAVE FILE
-        </button>
+        <div style="display: flex; gap: 8px; width: 100%; margin-top: 8px;">
+            <button class="btn-primary" id="saveBtn" onclick="saveDocument(false)" disabled style="flex: 1; padding: 14px 0;">
+                💾 SAVE
+            </button>
+            <button class="btn-primary" id="saveMergeBtn" onclick="saveDocument(true)" disabled style="flex: 1.2; padding: 14px 0; background: var(--green);">
+                MERGE & SAVE
+            </button>
+        </div>
+
+        <div id="statusMsg" class="status-msg"></div>
+
+        <div class="hint">Drag to select.<br>Enter to preview, then Save.</div>
 
         <button class="btn-clear" onclick="clearSelections()">Clear Pending</button>
 

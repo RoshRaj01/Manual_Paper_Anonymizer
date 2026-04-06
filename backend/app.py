@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import shutil
 import fitz
@@ -79,6 +79,14 @@ def normalize_rotation(pdf_path: str):
 
 # ── endpoints ────────────────────────────────────────────────────────────────
 
+@app.post("/upload-ack")
+async def upload_ack(file: UploadFile = File(...)):
+    """Uploads the acknowledgement file to the temp folder and returns the filename."""
+    filepath = os.path.join(TEMP_FOLDER, "ack_temp.pdf")
+    with open(filepath, "wb") as f:
+        f.write(await file.read())
+    return {"filename": "ack_temp.pdf"}
+
 @app.post("/set-folders")
 def set_folders(input_path: str, output_path: str):
     global INPUT_FOLDER, OUTPUT_FOLDER
@@ -149,6 +157,7 @@ def serve_output_pdf(filename: str):
 def remove_text(data: dict):
     filename   = data.get("filename")
     selections = data.get("selections", [])
+    ack_filename = data.get("ack_filename") # NEW
 
     if not filename:
         raise HTTPException(status_code=400, detail="filename is required")
@@ -157,7 +166,6 @@ def remove_text(data: dict):
 
     flat = safe_name(filename)
 
-    # Source is always the (possibly converted) temp PDF
     if filename.lower().endswith((".doc", ".docx")):
         input_path = os.path.join(TEMP_FOLDER, flat + ".pdf")
     else:
@@ -166,12 +174,15 @@ def remove_text(data: dict):
     if not os.path.exists(input_path):
         raise HTTPException(status_code=404, detail=f"Source PDF not found: {input_path}")
 
+    # Determine if an ack file was provided
+    ack_path = os.path.join(TEMP_FOLDER, ack_filename) if ack_filename else None
+
     base_name       = os.path.splitext(os.path.basename(filename))[0]
     output_filename = f"{base_name}_anonymized.pdf"
     output_path     = os.path.join(OUTPUT_FOLDER, output_filename)
 
     try:
-        remove_text_from_pdf(input_path, output_path, selections)
+        remove_text_from_pdf(input_path, output_path, selections, ack_pdf=ack_path)
         remove_metadata(output_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

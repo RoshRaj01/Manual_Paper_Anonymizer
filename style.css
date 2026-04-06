@@ -494,13 +494,26 @@ body {
 .btn-save:active:not(:disabled) { transform: scale(0.97); }
 .btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* The previewed redaction block (hides text visually) */
+/* Solid box to visually cover removed text */
 .redacted-rect {
     position: absolute;
-    background: #ffffff;
-    border: 1px solid #d1d1d1;
-    border-radius: 2px;
+    background: #ffffff; /* White block covering the text */
+    border: 1.5px solid #dcdcdc; /* Subtle border to show a redaction was made */
     pointer-events: none;
     z-index: 3;
-    box-shadow: inset 0 0 6px rgba(0,0,0,0.08);
+    animation: popIn 0.12s ease;
+}
+
+#saveMergeBtn:not(:disabled):hover {
+    background: #13a356 !important; /* Darker green on hover */
+}
+
+/* Make output files highlight on hover like input files */
+.output-list li {
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+}
+.output-list li:hover {
+    background: rgba(25, 199, 106, 0.1);
+    color: var(--green);
 }
