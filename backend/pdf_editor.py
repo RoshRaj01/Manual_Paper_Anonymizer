@@ -1,43 +1,49 @@
 import fitz  # PyMuPDF
 import os
-import shutil
 import tempfile
+import shutil
 
 
 def remove_text_from_pdf(input_pdf, output_pdf, selections, ack_pdf=None):
     doc = fitz.open(input_pdf)
 
-    for sel in selections:
-        page = doc[sel["page"]]
-        rect = fitz.Rect(sel["bbox"])
-        words = page.get_text("words")
+    # Only run the redaction engine if there are actual selections
+    if selections:
+        for sel in selections:
+            page = doc[sel["page"]]
+            rect = fitz.Rect(sel["bbox"])
+            words = page.get_text("words")
 
-        for w in words:
-            w_rect = fitz.Rect(w[:4])
-            if rect.intersects(w_rect):
-                overlap = rect & w_rect
-                word_area = w_rect.width * w_rect.height
-                overlap_area = overlap.width * overlap.height
+            for w in words:
+                w_rect = fitz.Rect(w[:4])
+                if rect.intersects(w_rect):
+                    overlap = rect & w_rect
+                    word_area = w_rect.width * w_rect.height
+                    overlap_area = overlap.width * overlap.height
 
-                if word_area > 0 and (overlap_area / word_area) > 0.20:
-                    page.add_redact_annot(w_rect, fill=(1, 1, 1))
+                    if word_area > 0 and (overlap_area / word_area) > 0.20:
+                        page.add_redact_annot(w_rect, fill=(1, 1, 1))
 
-    for page in doc:
-        page.apply_redactions()
+        for page in doc:
+            page.apply_redactions()
 
-    # NEW MERGE LOGIC:
+    # Merge or Save (using temp files to avoid Windows Permission Errors)
     if ack_pdf and os.path.exists(ack_pdf):
-        # Open the Acknowledgement file as the base document
         final_doc = fitz.open(ack_pdf)
-        # Insert the anonymized research paper at the end of the Acknowledgement
         final_doc.insert_pdf(doc)
-        final_doc.save(output_pdf)
+
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
+        os.close(tmp_fd)
+        final_doc.save(tmp_path)
         final_doc.close()
         doc.close()
+        shutil.move(tmp_path, output_pdf)
     else:
-        # Standard save without merging
-        doc.save(output_pdf)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
+        os.close(tmp_fd)
+        doc.save(tmp_path)
         doc.close()
+        shutil.move(tmp_path, output_pdf)
 
 
 def remove_metadata(pdf_path: str):

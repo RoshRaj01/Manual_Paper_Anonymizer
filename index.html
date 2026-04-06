@@ -98,8 +98,15 @@
         <div style="border-top: 1px solid var(--border); padding-top: 14px; margin-top: auto;">
             <div class="panel-heading" style="margin-bottom: 8px;">Prepended Document</div>
             <input type="file" id="ackFileInput" accept=".pdf" style="display:none;">
-            <button class="btn-clear" onclick="document.getElementById('ackFileInput').click()" style="padding: 10px;">📄 Upload Acknowledgement</button>
-            <div id="ackFileName" class="hint" style="margin-top: 6px; font-size: 9px; text-align: left;">No file uploaded</div>
+
+            <button class="btn-clear" id="ackUploadBtn" onclick="document.getElementById('ackFileInput').click()" style="padding: 10px; width: 100%;">
+                📄 Upload Acknowledgement
+            </button>
+
+            <div id="ackFileDisplay" class="pending-item" style="display: none; margin-top: 6px; border-left: 3px solid var(--blue);">
+                <span id="ackFileName" style="display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 5px;"></span>
+                <button class="remove-sel" onclick="removeAckFile()" title="Remove File">✕</button>
+            </div>
         </div>
 
         <div class="action-buttons">

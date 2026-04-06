@@ -7,6 +7,7 @@ import fitz
 from converter import convert_to_pdf
 from pdf_editor import remove_text_from_pdf, remove_metadata
 from utils import list_files
+import tempfile
 
 app = FastAPI()
 
@@ -157,29 +158,39 @@ def serve_output_pdf(filename: str):
 def remove_text(data: dict):
     filename   = data.get("filename")
     selections = data.get("selections", [])
-    ack_filename = data.get("ack_filename") # NEW
+    ack_filename = data.get("ack_filename")
 
     if not filename:
         raise HTTPException(status_code=400, detail="filename is required")
-    if not selections:
-        raise HTTPException(status_code=400, detail="No selections provided")
+
+    # Allow empty selections ONLY if we are uploading an ack file to merge
+    if not selections and not ack_filename:
+        raise HTTPException(status_code=400, detail="No selections or merge file provided")
 
     flat = safe_name(filename)
 
-    if filename.lower().endswith((".doc", ".docx")):
-        input_path = os.path.join(TEMP_FOLDER, flat + ".pdf")
+    # 🔧 NEW: If they are merging an already saved output file
+    if filename.endswith("_anonymized.pdf"):
+        input_path = os.path.join(OUTPUT_FOLDER, filename)
+        if not os.path.exists(input_path):
+            raise HTTPException(status_code=404, detail=f"Output PDF not found: {input_path}")
+        output_filename = filename # Overwrite the existing file
+        output_path = os.path.join(OUTPUT_FOLDER, output_filename)
     else:
-        input_path = os.path.join(TEMP_FOLDER, flat)
+        # Standard input processing
+        if filename.lower().endswith((".doc", ".docx")):
+            input_path = os.path.join(TEMP_FOLDER, flat + ".pdf")
+        else:
+            input_path = os.path.join(TEMP_FOLDER, flat)
 
-    if not os.path.exists(input_path):
-        raise HTTPException(status_code=404, detail=f"Source PDF not found: {input_path}")
+        if not os.path.exists(input_path):
+            raise HTTPException(status_code=404, detail=f"Source PDF not found: {input_path}")
 
-    # Determine if an ack file was provided
+        base_name       = os.path.splitext(os.path.basename(filename))[0]
+        output_filename = f"{base_name}_anonymized.pdf"
+        output_path     = os.path.join(OUTPUT_FOLDER, output_filename)
+
     ack_path = os.path.join(TEMP_FOLDER, ack_filename) if ack_filename else None
-
-    base_name       = os.path.splitext(os.path.basename(filename))[0]
-    output_filename = f"{base_name}_anonymized.pdf"
-    output_path     = os.path.join(OUTPUT_FOLDER, output_filename)
 
     try:
         remove_text_from_pdf(input_path, output_path, selections, ack_pdf=ack_path)

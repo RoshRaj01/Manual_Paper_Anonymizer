@@ -88,12 +88,31 @@ document.getElementById('ackFileInput').addEventListener('change', async (e) => 
         const res = await fetch(`${API}/upload-ack`, { method: "POST", body: formData });
         const data = await res.json();
         ackFilename = data.filename;
+
+        // 🔧 Toggle UI Elements
         document.getElementById('ackFileName').textContent = file.name;
+        document.getElementById('ackUploadBtn').style.display = "none";
+        document.getElementById('ackFileDisplay').style.display = "block";
+
         setStatus("Acknowledgement file ready", "success");
+        updateSelectionUI(); // Update buttons immediately
     } catch (err) {
         setStatus("Upload failed", "error");
     }
 });
+
+// Removes the uploaded acknowledgement file and resets the UI
+function removeAckFile() {
+    ackFilename = null;
+    document.getElementById('ackFileInput').value = ""; // Clear the hidden input
+
+    // 🔧 Toggle UI Elements back to default
+    document.getElementById('ackUploadBtn').style.display = "block";
+    document.getElementById('ackFileDisplay').style.display = "none";
+
+    setStatus("Acknowledgement file removed", "");
+    updateSelectionUI(); // Disable the Merge button since the file is gone
+}
 
 // ─── FILE LISTING ────────────────────────────────────────────────────────────
 async function loadFiles() {
@@ -157,7 +176,8 @@ async function loadFile(index) {
 
         pageRotations = data.rotations || [];   // ← per-page rotation from backend
 
-        await openPdf(`${API}${data.pdf_url}`);
+        // 🔧 CACHE BUSTER: Add ?t= timestamp to force browser to fetch fresh file
+        await openPdf(`${API}${data.pdf_url}?t=${Date.now()}`);
         setStatus("", "");
     } catch (e) {
         setStatus("Load failed: " + e.message, "error");
@@ -173,9 +193,10 @@ async function loadOutputFile(filename) {
     canvas.style.pointerEvents = "none";
 
     try {
-        await openPdf(`${API}/serve-pdf/output/${encodeURIComponent(filename)}`);
+        // 🔧 CACHE BUSTER: Add ?t= timestamp to force browser to fetch fresh file
+        await openPdf(`${API}/serve-pdf/output/${encodeURIComponent(filename)}?t=${Date.now()}`);
         setStatus("Viewing saved file.", "success");
-        currentFilename = null; // Prevent accidental overwriting
+        currentFilename = filename; // Prevent accidental overwriting
         updateSelectionUI(); // Ensure save buttons are disabled
     } catch (e) {
         setStatus("Preview failed: " + e.message, "error");
@@ -346,7 +367,6 @@ function removeSelection(i) {
 function updateSelectionUI() {
     const pendingCount = selections.length;
     const appliedCount = appliedRedactions.length;
-
     selectionCount.textContent = pendingCount + appliedCount;
 
     const applyBtn = document.getElementById("applyBtn");
@@ -355,25 +375,31 @@ function updateSelectionUI() {
     const saveMergeBtn = document.getElementById("saveMergeBtn");
     const removeBtn = document.getElementById("removeBtn");
 
-    if(applyBtn) applyBtn.disabled = pendingCount === 0;
-    if(undoBtn) undoBtn.disabled = appliedCount === 0;
+    const isOutputView = currentFilename && currentFilename.endsWith('_anonymized.pdf');
+
+    if(applyBtn) applyBtn.disabled = pendingCount === 0 || isOutputView;
+    if(undoBtn) undoBtn.disabled = appliedCount === 0 || isOutputView;
     if(saveBtn) saveBtn.disabled = appliedCount === 0;
-    if(saveMergeBtn) saveMergeBtn.disabled = appliedCount === 0;
-    if(removeBtn) removeBtn.disabled = pendingCount === 0;
+    if(removeBtn) removeBtn.disabled = pendingCount === 0 || isOutputView;
+
+    // 🔧 NEW: Merge is enabled if we are viewing an output file AND have an ack file uploaded
+    if(saveMergeBtn) {
+        if (isOutputView) {
+            saveMergeBtn.disabled = !ackFilename;
+        } else {
+            saveMergeBtn.disabled = appliedCount === 0 || !ackFilename;
+        }
+    }
 
     pendingList.innerHTML = "";
-
-    // Show both applied (previewed) and pending selections
     [...appliedRedactions, ...selections].forEach((sel, i) => {
         const div = document.createElement("div");
         div.className = "pending-item";
-
         const isApplied = i < appliedRedactions.length;
         div.style.opacity = isApplied ? "0.6" : "1";
-        if (isApplied) div.style.borderLeft = "3px solid #16a05a"; // Green indicator
+        if (isApplied) div.style.borderLeft = "3px solid #16a05a";
         div.textContent = (isApplied ? "✓ " : "") + sel.label;
 
-        // Only allow individual deletion for pending items
         if (!isApplied) {
             const btn = document.createElement("button");
             btn.className   = "remove-sel";
@@ -463,9 +489,13 @@ function undoRedaction() {
 
 
 async function saveDocument(withMerge = false) {
-    if (!currentFilename || appliedRedactions.length === 0) return;
+    if (!currentFilename) return;
 
-    // Check if they want to merge but haven't uploaded a file
+    const isOutputView = currentFilename.endsWith('_anonymized.pdf');
+
+    // 🔧 NEW: Stop if not output view and no redactions
+    if (!isOutputView && appliedRedactions.length === 0) return;
+
     if (withMerge && !ackFilename) {
         setStatus("Please upload an Acknowledgement file first!", "error");
         return;
@@ -484,24 +514,17 @@ async function saveDocument(withMerge = false) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 filename:   currentFilename,
-                // Pass the appliedRedactions to the backend instead of 'selections'
                 selections: appliedRedactions.map(s => ({ page: s.page, bbox: s.bbox })),
                 ack_filename: withMerge ? ackFilename : null
             }),
         });
 
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({ detail: res.statusText }));
-            throw new Error(err.detail || res.statusText);
-        }
+        if (!res.ok) throw new Error(await res.text());
 
         const data = await res.json();
-        setStatus(`✓ Saved: ${data.output}`, "success");
+        setStatus(`✓ Saved & Merged: ${data.output}`, "success");
 
-        // Load the freshly anonymized PDF from the backend safely
         await loadOutputFile(data.output);
-
-        // Clear state
         appliedRedactions = [];
         clearSelections();
         await refreshOutputFiles();
